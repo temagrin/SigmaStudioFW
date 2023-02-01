@@ -1,6 +1,7 @@
-﻿#ifndef __SIGMASTUDIOFW_H__
+#ifndef __SIGMASTUDIOFW_H__
 #define __SIGMASTUDIOFW_H__
 #include <Arduino.h>
+#include "USER_SETTINGS.h"
 
 
 #if USE_SPI
@@ -143,8 +144,9 @@ void SIGMA_WRITE_REGISTER_BLOCK(byte devAddress, int address, int length, byte p
 #endif    // End of function for I2C write
 }
 
+
 // use for progmem type
-void SIGMA_WRITE_REGISTER_BLOCK(byte devAddress, int address, int length, const uint8_t pData[]) {
+void SIGMA_WRITE_REGISTER_BLOCK(byte devAddress, int address, int length, const uint8_t pData[], int addrOffset) {
 #if USE_SPI    // Start of function for SPI write
     // Assert SPI slave select line
     digitalWrite(DSP_SS_PIN, LOW);        // Assert SPI slave select line (active low)
@@ -153,7 +155,7 @@ void SIGMA_WRITE_REGISTER_BLOCK(byte devAddress, int address, int length, const 
     SPI.transfer(address >> 8);           // High byte of address
     SPI.transfer(address & 0xff);         // Low byte of address
     for (int i = 0; i < length; i++) {    // For each data byte in the packet...
-        SPI.transfer(pgm_read_byte_near(pData, i));           // Write the data byte to the DSP
+        SPI.transfer(pgm_read_byte_near(pData+i+addrOffset));           // Write the data byte to the DSP
     }
     SPI.endTransaction();              // Release the SPI bus
     digitalWrite(DSP_SS_PIN, HIGH);    // Pull up the slave select line
@@ -167,7 +169,7 @@ void SIGMA_WRITE_REGISTER_BLOCK(byte devAddress, int address, int length, const 
         Wire.write(address >> 8);                // Add high byte of address to the I2C buffer
         Wire.write(address & 0xff);              // Add low byte of address to the I2C buffer
         for (int i=0;i<length;i++){
-            Wire.write(pgm_read_byte_near(pData+i));               //  Add the whole data packet to the I2C buffer
+            Wire.write(pgm_read_byte_near(pData+i+addrOffset));               //  Add the whole data packet to the I2C buffer
         }
         Wire.endTransmission();                  // Send the entire I2C transmission to the DSP
     }
@@ -189,7 +191,7 @@ void SIGMA_WRITE_REGISTER_BLOCK(byte devAddress, int address, int length, const 
                 // If another register will fit inside the current I2C burst write,
                 // add each byte to the I2C buffer one at a time.
                 for (byte i = 0; i < getMemoryDepth(uint32_t(address)); i++) {
-                    Wire.write(pgm_read_byte_near(pData+currentByte)); 
+                    Wire.write(pgm_read_byte_near(pData+currentByte+addrOffset)); 
                     currentByte++;
                     bytesTransmitted++;
                 }
@@ -205,10 +207,16 @@ void SIGMA_WRITE_REGISTER_BLOCK(byte devAddress, int address, int length, const 
 #endif
 }
 
+void SIGMA_WRITE_REGISTER_BLOCK(byte devAddress, int address, int length, const uint8_t pData[]) {
+  SIGMA_WRITE_REGISTER_BLOCK(devAddress, address, length, pData, 0);
+}
+
 // Alternative function call without the address (single dsp system)
 void SIGMA_WRITE_REGISTER_BLOCK(int address, int length, byte pData[]) {
     SIGMA_WRITE_REGISTER_BLOCK(DSP_I2C_ADDR, address, length, pData);
 }
+
+
 
 // Write a 32-bit integer to the DSP. NOTE: 5.23 not supported quite yet.
 void SIGMA_WRITE_REGISTER_INTEGER(int address, int32_t pData) {
@@ -237,6 +245,19 @@ void SIGMA_WRITE_DELAY(byte devAddress, int length, const uint8_t pData[]) {
         delay_length = (delay_length << 8) + pgm_read_byte_near(pData+i);
     }
     delay(delay_length);    // Delay this processor (not the DSP) by the appropriate time
+}
+
+
+void SIGMA_WRITE_SAFELOAD_REGISTER_BLOCK(int address, int length, uint8_t pData[]){
+  SIGMA_WRITE_REGISTER_BLOCK(DSP_I2C_ADDR, SAFELOAD_DATA_ADDR, length, pData);
+  SIGMA_WRITE_REGISTER_INTEGER(SAFELOAD_ADDR_ADDR, address);
+  SIGMA_WRITE_REGISTER_BLOCK(DSP_I2C_ADDR, SAFELOAD_SLOTS_ADDR, length, SAFELOAD_SLOTS_DATA_1);
+}
+
+void SIGMA_WRITE_SAFELOAD_REGISTER_BLOCK(int address, int length, const uint8_t pData[], int addrOffset){
+  SIGMA_WRITE_REGISTER_BLOCK(DSP_I2C_ADDR, SAFELOAD_DATA_ADDR, length, pData, addrOffset);
+  SIGMA_WRITE_REGISTER_INTEGER(SAFELOAD_ADDR_ADDR, address);
+  SIGMA_WRITE_REGISTER_BLOCK(DSP_I2C_ADDR, SAFELOAD_SLOTS_ADDR, length, SAFELOAD_SLOTS_DATA_1);
 }
 
 // Function to read back data from the DSP, not called by SigmaStudio export files
